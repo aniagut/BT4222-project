@@ -224,7 +224,7 @@ class CombineDataset(DataLoader):
             is_clicked = 1 if int(article_inview) in map(int, article_ids_clicked_value) else 0
 
             sentiment_score = self.articles_dl[article_inview]["sentiment_score"].numpy()[0]
-            is_premium_user = self.behaviors_dl[impression_id]["is_subscriber"]
+            is_premium_user = self.behaviors_dl[impression_id]["is_subscriber"].tolist()[0]
             # TODO to fix from series and remove toList
             readtime_avg = np.mean(self.history_dl[user_id_value]["read_time_fixed"].tolist()[0])
 
