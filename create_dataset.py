@@ -205,16 +205,16 @@ class CombineDataset(DataLoader):
         impression_row = self.behaviors_dl[impression_id]
 
         # Retrieve the specific columns from the impression row
-        session_id_value = impression_row["session_id"]
-        user_id_value = impression_row["user_id"]
-        article_ids_clicked_value = impression_row["article_ids_clicked"]
-        article_inviews = impression_row["article_ids_inview"]
+        session_id_value = impression_row["session_id"].values[0]
+        user_id_value = impression_row["user_id"].values[0]
+        article_ids_clicked_value = impression_row["article_ids_clicked"].values[0]
+        article_inviews = impression_row["article_ids_inview"].values[0]
 
 
         # Create a list to store rows for the DataFrame
         rows = []
 
-        article_inviews_list = article_inviews.tolist()[0]
+        article_inviews_list = article_inviews
 
         # Iterate over each article in view
         for article_inview in article_inviews_list:
@@ -223,9 +223,10 @@ class CombineDataset(DataLoader):
             # Check if the article was clicked
             is_clicked = 1 if int(article_inview) in map(int, article_ids_clicked_value) else 0
 
-            sentiment_score = self.articles_dl[article_inview]["sentiment_score"]
+            sentiment_score = self.articles_dl[article_inview]["sentiment_score"].numpy()[0]
             is_premium_user = self.behaviors_dl[impression_id]["is_subscriber"]
-            readtime_avg = np.mean(self.history_dl[user_id_value.tolist()[0]]["read_time_fixed"].tolist()[0])
+            # TODO to fix from series and remove toList
+            readtime_avg = np.mean(self.history_dl[user_id_value]["read_time_fixed"].tolist()[0])
 
             # Create a row dictionary with the necessary data
             row = {
