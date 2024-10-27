@@ -3,7 +3,7 @@ import numpy as np
 import os
 import torch
 from torch.utils.data import DataLoader, Dataset
-
+print("Loading Dataset")
 dataset_type = "ebnerd_demo"
 base_path = os.path.join(".", dataset_type)
 train_path = os.path.join(base_path, "train")
@@ -254,6 +254,7 @@ combineTest = CombineDataset(articles_dataset, behaviors_train_dataset, history_
 #get list of impression ids
 list_of_impression_ids_train = behaviors_limit_train["impression_id"].tolist()# Initialize a list to store DataFrames
 data_frames = []
+print("Creating dataset")
 # Loop through each impression ID and retrieve the corresponding DataFrame
 for impression_id in list_of_impression_ids_train:
     try:
