@@ -3,9 +3,10 @@ import numpy as np
 import os
 import torch
 from torch.utils.data import DataLoader, Dataset
+from tqdm import tqdm
 
 # Paths and configuration
-dataset_type = "ebnerd_demo"
+dataset_type = "ebnerd_small"
 base_path = os.path.join(".", dataset_type)
 train_path = os.path.join(base_path, "train")
 behaviors_path = os.path.join(train_path, "behaviors.parquet")
@@ -135,7 +136,7 @@ combineTest = CombineDataset(articles_dataset, behaviors_train_dataset, history_
 list_of_impression_ids_train = behaviors_limit_train["impression_id"].tolist()
 data_frames = []
 
-for impression_id in list_of_impression_ids_train:
+for impression_id in tqdm(list_of_impression_ids_train):
     try:
         id_df = combineTest[int(impression_id)]
     except Exception as e:
@@ -145,5 +146,6 @@ for impression_id in list_of_impression_ids_train:
 
 concatenated_data = pd.concat(data_frames, ignore_index=True)
 print(concatenated_data.head())
-concatenated_data.to_csv("xgboost_dataset.csv", index=False)
+print(len(concatenated_data))
+concatenated_data.to_csv(f"xgboost_dataset_{dataset_type}.csv", index=False)
 
