@@ -7,7 +7,7 @@ import time
 start = time.time()
 # Paths and configuration
 print("loading dataset")
-dataset_type = "ebnerd_demo"
+dataset_type = "ebnerd_small"
 base_path = os.path.join(".", dataset_type)
 train_path = os.path.join(base_path, "train")
 behaviors_path = os.path.join(train_path, "behaviors.parquet")
@@ -67,25 +67,25 @@ history_exploded = history_exploded.merge(
 )
 
 # Calculate user-level metrics
-user_read_time_avg = history_exploded.groupby('user_id')['read_time'].mean().reset_index(name='average_read_time')
-user_scroll_avg = history_exploded.groupby('user_id')['scroll_percentage'].mean().reset_index(name='average_scroll_percentage')
+user_read_time_avg = history_exploded.groupby('user_id')['read_time'].mean().reset_index(name='user_average_read_time')
+user_scroll_avg = history_exploded.groupby('user_id')['scroll_percentage'].mean().reset_index(name='user_average_scroll_percentage')
 
 # Merge user-level metrics into exploded history
 history_exploded = history_exploded.merge(user_read_time_avg, on='user_id', how='left')
 history_exploded = history_exploded.merge(user_scroll_avg, on='user_id', how='left')
 
 # Define function to calculate impression frequency (average time between consecutive impressions)
-def calculate_impression_frequency(impression_times):
+def calculate_user_impression_frequency(impression_times):
     if len(impression_times) < 2:
         return 0
     time_diffs = np.diff(impression_times).astype('timedelta64[s]')
     return np.mean(time_diffs)
 
 # Apply impression frequency calculation per user
-history_exploded["impression_frequency"] = history_exploded.groupby('user_id')['impression_time'].transform(
-    lambda x: calculate_impression_frequency(x.values) if x.count() > 1 else 0
+history_exploded["user_impression_frequency"] = history_exploded.groupby('user_id')['impression_time'].transform(
+    lambda x: calculate_user_impression_frequency(x.values) if x.count() > 1 else 0
 )
-history_exploded["impression_frequency"] = history_exploded["impression_frequency"].dt.total_seconds()
+history_exploded["user_impression_frequency"] = history_exploded["user_impression_frequency"].dt.total_seconds()
 
 # Calculate favorite and least favorite categories per user
 category_counts = history_exploded.groupby(['user_id', 'category_encoded']).size().reset_index(name='count')
@@ -110,7 +110,7 @@ history_exploded = history_exploded.merge(
 
 # Calculate interaction score
 history_exploded['interaction_score'] = (
-    history_exploded['average_read_time'] + history_exploded['average_scroll_percentage']
+    history_exploded['user_average_read_time'] + history_exploded['user_average_scroll_percentage']
 ) / 2
 
 # Calculate the dominant sentiment label for each user
@@ -121,19 +121,15 @@ history_exploded = history_exploded.merge(dominant_mood, on='user_id', how='left
 
 # Merge features back into the original history DataFrame to get one value per user
 history_FE = history_exploded.groupby('user_id').agg({
-    'average_read_time': 'mean',
-    'average_scroll_percentage': 'mean',
-    'impression_frequency': 'mean',
+    'user_average_read_time': 'mean',
+    'user_average_scroll_percentage': 'mean',
+    'user_impression_frequency': 'mean',
     'favorite_category_encoded': 'first',
     'least_favorite_category_encoded': 'first',
     'interaction_score': 'mean',
     'user_mood': 'first'
 }).reset_index()
 
-
-
-
-###########################
 ############################
 # SPLITTING AND MERGING
 ############################
@@ -153,6 +149,7 @@ behaviors_train["article_ids_clicked"] = behaviors_train["article_ids_clicked"].
     lambda x: list(map(int, x)) if isinstance(x, (list, np.ndarray)) else []
 )
 behaviors_train["clicked"] = behaviors_train.apply(lambda x: int(x["article_ids_inview"]) in x["article_ids_clicked"], axis=1)
+
 
 
 """
@@ -199,6 +196,9 @@ merged_data = pd.merge(
 )
 
 
+merged_data["user_article_same_mood"] = merged_data["sentiment_label"] == merged_data["user_mood"]
+
+
 # Select and rename columns
 final_data = merged_data
 print("saving to parquet")
@@ -208,16 +208,14 @@ final_data.to_parquet(f"{file_name}.parquet", index=False)
 end = time.time()
 print(f"Saved {file_name} of length: {len(final_data)} in {end-start:.2f} seconds.")
 
-# Preview
 
-
-
-
-
-features_cont = ['read_time', 'device_type',
-                 'is_sso_user', 'is_subscriber', 'premium',
-                 'sentiment_score', 'average_read_time',
-                 'average_scroll_percentage', 'impression_frequency',
+features_cont = ['read_time', 
+                 'sentiment_score', 'user_average_read_time',
+                 'user_average_scroll_percentage', 'user_impression_frequency',
                  'interaction_score']
 
-features_cat = ['sentiment_label', 'user_mood', 'category_encoded', 'subcategory_encoded', 'favorite_category_encoded', 'least_favorite_category_encoded']
+features_cat = ['sentiment_label', 'user_mood','device_type',
+                'is_sso_user', 'is_subscriber', 'premium',
+                'category_encoded', 'subcategory_encoded',
+                'favorite_category_encoded', 'least_favorite_category_encoded',
+                'user_article_same_mood']
