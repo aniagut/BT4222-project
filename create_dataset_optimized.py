@@ -9,8 +9,11 @@ print("loading dataset")
 dataset_type = "ebnerd_small"
 base_path = os.path.join(".", dataset_type)
 train_path = os.path.join(base_path, "train")
+# validation_path = os.path.join(base_path, "validation")
 behaviors_path = os.path.join(train_path, "behaviors.parquet")
+# behaviors_path = os.path.join(validation_path, "behaviors.parquet")
 history_path = os.path.join(train_path, "history.parquet")
+# history_path = os.path.join(validation_path, "history.parquet")
 articles_path = os.path.join(base_path, "articles.parquet")
 
 # Column selections
@@ -27,6 +30,9 @@ articles = pd.read_parquet(articles_path)[articles_columns]
 # Filter train/test
 behaviors_train = behaviors[behaviors["impression_time"] <= '2023-05-23 07:00:00']
 behaviors_test = behaviors[behaviors["impression_time"] > '2023-05-23 07:00:00']
+
+# Validation set
+#behaviors_train = behaviors
 
 # Pre-process behaviors for merging
 behaviors_train = behaviors_train.explode("article_ids_inview").reset_index(drop=True)
