@@ -1,7 +1,6 @@
 import pandas as pd
 import numpy as np
 import os
-import torch
 from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
 
@@ -13,7 +12,7 @@ behaviors_path = os.path.join(train_path, "behaviors.parquet")
 history_path = os.path.join(train_path, "history.parquet")
 articles_path = os.path.join(base_path, "articles.parquet")
 
-articles_columns = ["article_id", "premium", "category", "sentiment_score"]
+articles_columns = ["article_id", "premium", "category", "sentiment_score", "body"]
 
 behaviors_columns = ["impression_id", "article_id", "read_time", "scroll_percentage", "device_type",
                      "article_ids_inview", "impression_time",
@@ -35,27 +34,6 @@ print(articles_limit.head())
 
 batch_size = 512
 
-class ArticlesDataset(Dataset):
-    def __init__(self, articles):
-        self.articles = articles
-
-    def __len__(self):
-        return len(self.articles)
-
-    def __getitem__(self, article_id):
-        article_rows = self.articles.loc[self.articles['article_id'] == article_id]
-        if article_rows.empty:
-            raise ValueError(f"No articles found for article_id: {article_id}")
-
-        return {
-            'article_id': torch.tensor(article_rows['article_id'].values, dtype=torch.long),
-            'category': torch.tensor(article_rows['category'].values, dtype=torch.long),
-            'sentiment_score': torch.tensor(article_rows['sentiment_score'].values, dtype=torch.float),
-            'premium': torch.tensor(article_rows['premium'].values, dtype=torch.bool)
-        }
-
-articles_dataset = ArticlesDataset(articles_limit)
-articles_loader = DataLoader(articles_dataset, batch_size=batch_size, shuffle=True)
 
 class BehaviorsDataset(Dataset):
     def __init__(self, behaviors):

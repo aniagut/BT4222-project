@@ -40,6 +40,28 @@ user_readtime_avg = history.groupby("user_id")["read_time_fixed"].mean().rename(
 history["readtime_avg"] = history["read_time_fixed"].apply(lambda x: np.mean(x) if isinstance(x, np.ndarray) else 0)
 user_readtime_avg = history["readtime_avg"]
 
+"""
+we can merge later also embeddings by article_id
+embeddings_df = pd.read_parquet('./article_embeddings.parquet')
+articles_emb = pd.merge(
+    articles,
+    embeddings_df,
+    left_on="article_id",
+    right_index=True,
+    how="left"
+)
+
+and next merge should be (instead of existing merge_data)
+
+merged_data = pd.merge(
+    behaviors_train,
+    articles_emb,
+    left_on="article_ids_inview",
+    right_on="article_id",
+    how="left"
+)
+"""
+
 print("Merging behaviour and articles")
 # Merge data
 # 1. Merge behaviors and articles
