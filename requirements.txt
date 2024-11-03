@@ -10,3 +10,4 @@ fastparquet
 matplotlib
 seaborn
 pyarrow
+umap-learn
