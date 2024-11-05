@@ -4,6 +4,7 @@ from sklearn.preprocessing import LabelEncoder
 import os
 from tqdm import tqdm
 import time
+
 start = time.time()
 # Paths and configuration
 print("loading dataset")
@@ -17,35 +18,57 @@ history_path = os.path.join(train_path, "history.parquet")
 # history_path = os.path.join(validation_path, "history.parquet")
 articles_path = os.path.join(base_path, "articles.parquet")
 
-
 # Column selections
-articles_columns = ["article_id", "premium", "category", "subcategory", "sentiment_score", "sentiment_label"]
-behaviors_columns = ["impression_id", "read_time",
+articles_columns = ["article_id",
+                    "premium", "category",
+                    "subcategory", "sentiment_score",
+                    "sentiment_label", "published_time"]
+
+behaviors_columns = ["impression_id",
                      "device_type", "article_ids_inview",
-                     "impression_time", "article_ids_clicked",
+                     "article_ids_clicked",
                      "user_id", "is_sso_user",
-                     "is_subscriber", "session_id"]
+                     "is_subscriber", "session_id",
+                     # origin article features:
+                     "article_id", "impression_time",
+                     "read_time", "scroll_percentage"]
 
 # Load data
 behaviors = pd.read_parquet(behaviors_path)[behaviors_columns]
+behaviors.rename(columns={"article_id": "origin_article_id",
+                          "read_time": "origin_read_time",
+                          "scroll_percentage": "origin_scroll_percentage"}, inplace=True)
+
 history = pd.read_parquet(history_path)
 articles = pd.read_parquet(articles_path)[articles_columns]
 embeddings_df = pd.read_parquet('./article_embeddings.parquet')
+embedding_clusters = pd.read_parquet('./clustering_results.parquet')
+articles = articles.merge(embedding_clusters, left_on="article_id", right_on="article_id", how= "left")
 
 ############################
 # CATEGORICAL VARIABLES
 ############################
-category_encoder = LabelEncoder()
-subcategory_encoder = LabelEncoder()
 
-articles['category_encoded'] = category_encoder.fit_transform(articles['category'])
+# Join Behaviors on articles and get the genre o
+behaviors_articles = behaviors.merge(articles,
+                                     left_on="origin_article_id",
+                                     right_on="article_id", how="left")
 
-# If 'subcategory' is a NumPy array of integers, you can directly encode it
-# If it is a list of arrays, you may want to flatten it or handle it differently.
-articles['subcategory_encoded'] = subcategory_encoder.fit_transform(
-    articles['subcategory'].apply(lambda x: ','.join(map(str, x)) if isinstance(x, np.ndarray) else x))
+# Create origin features and fill nan with neutral values for home page
+homepage_category = 0
+assert homepage_category not in behaviors_articles["category"].values
+homepage_id = 0
+assert homepage_id not in behaviors_articles["origin_article_id"].values
+behaviors["origin_article_id"] = behaviors["origin_article_id"].fillna(homepage_id)
+behaviors["coming_from_home_page"] = behaviors["origin_article_id"] == homepage_id
+# Features
+behaviors["origin_category"] = behaviors_articles["category"].fillna(homepage_category)
+behaviors["origin_scroll_percentage"] = behaviors_articles["origin_scroll_percentage"].fillna(0)
+behaviors["origin_sentiment_label"] = behaviors_articles["sentiment_label"].fillna("Neutral")
+behaviors["origin_sentiment_score"] = behaviors_articles["sentiment_score"].fillna(0.5)
+behaviors["origin_published_time"] = behaviors_articles["published_time"].fillna(behaviors["impression_time"])
 
-
+# WE FILL WITH THE TIME OF THE IMPRESSION, AS THE FRONT PAGE IS ALWAYS UPDATED
 
 
 # Explode arrays in `history` to get individual article impressions
@@ -64,18 +87,20 @@ history_exploded = history_exploded.rename(columns={
 
 # Join with articles dataset to get additional features
 history_exploded = history_exploded.merge(
-    articles[['article_id', 'sentiment_label', 'category_encoded']],
+    articles[['article_id', 'sentiment_label', 'category']],
     on='article_id',
     how='left'
 )
 
 # Calculate user-level metrics
 user_read_time_avg = history_exploded.groupby('user_id')['read_time'].mean().reset_index(name='user_average_read_time')
-user_scroll_avg = history_exploded.groupby('user_id')['scroll_percentage'].mean().reset_index(name='user_average_scroll_percentage')
+user_scroll_avg = history_exploded.groupby('user_id')['scroll_percentage'].mean().reset_index(
+    name='user_average_scroll_percentage')
 
 # Merge user-level metrics into exploded history
 history_exploded = history_exploded.merge(user_read_time_avg, on='user_id', how='left')
 history_exploded = history_exploded.merge(user_scroll_avg, on='user_id', how='left')
+
 
 # Define function to calculate impression frequency (average time between consecutive impressions)
 def calculate_user_impression_frequency(impression_times):
@@ -84,6 +109,7 @@ def calculate_user_impression_frequency(impression_times):
     time_diffs = np.diff(impression_times).astype('timedelta64[s]')
     return np.mean(time_diffs)
 
+
 # Apply impression frequency calculation per user
 history_exploded["user_impression_frequency"] = history_exploded.groupby('user_id')['impression_time'].transform(
     lambda x: calculate_user_impression_frequency(x.values) if x.count() > 1 else 0
@@ -91,33 +117,35 @@ history_exploded["user_impression_frequency"] = history_exploded.groupby('user_i
 history_exploded["user_impression_frequency"] = history_exploded["user_impression_frequency"].dt.total_seconds()
 
 # Calculate favorite and least favorite categories per user
-category_counts = history_exploded.groupby(['user_id', 'category_encoded']).size().reset_index(name='count')
+category_counts = history_exploded.groupby(['user_id', 'category']).size().reset_index(name='count')
 
 # Favorite category
 favorite_category = category_counts.loc[category_counts.groupby('user_id')['count'].idxmax()]
 history_exploded = history_exploded.merge(
-    favorite_category[['user_id', 'category_encoded']],
+    favorite_category[['user_id', 'category']],
     on='user_id',
     how='left',
     suffixes=('', '_favorite')
-).rename(columns={"category_encoded_favorite": "favorite_category_encoded"})
+).rename(columns={"category_favorite": "favorite_category"})
 
 # Least favorite category
 least_favorite_category = category_counts.loc[category_counts.groupby('user_id')['count'].idxmin()]
 history_exploded = history_exploded.merge(
-    least_favorite_category[['user_id', 'category_encoded']],
+    least_favorite_category[['user_id', 'category']],
     on='user_id',
     how='left',
     suffixes=('', '_least_favorite')
-).rename(columns={"category_encoded_least_favorite": "least_favorite_category_encoded"})
+).rename(columns={"category_least_favorite": "least_favorite_category"})
 
 # Calculate interaction score
-history_exploded['interaction_score'] = (
-    history_exploded['user_average_read_time'] + history_exploded['user_average_scroll_percentage']
-) / 2
+history_exploded['user_interaction_score'] = (
+                                                     history_exploded['user_average_read_time'] + history_exploded[
+                                                 'user_average_scroll_percentage']
+                                             ) / 2
 
 # Calculate the dominant sentiment label for each user
-dominant_mood = history_exploded.groupby('user_id')['sentiment_label'].agg(lambda x: x.value_counts().idxmax()).reset_index(name='user_mood')
+dominant_mood = history_exploded.groupby('user_id')['sentiment_label'].agg(
+    lambda x: x.value_counts().idxmax()).reset_index(name='user_mood')
 
 # Merge user mood into exploded history
 history_exploded = history_exploded.merge(dominant_mood, on='user_id', how='left')
@@ -127,9 +155,9 @@ history_FE = history_exploded.groupby('user_id').agg({
     'user_average_read_time': 'mean',
     'user_average_scroll_percentage': 'mean',
     'user_impression_frequency': 'mean',
-    'favorite_category_encoded': 'first',
-    'least_favorite_category_encoded': 'first',
-    'interaction_score': 'mean',
+    'favorite_category': 'first',
+    'least_favorite_category': 'first',
+    'user_interaction_score': 'mean',
     'user_mood': 'first'
 }).reset_index()
 
@@ -140,51 +168,20 @@ history_FE = history_exploded.groupby('user_id').agg({
 
 
 
-val_date = '2023-05-23 07:00:00'
-
-# Filter train/test
-behaviors_train = behaviors[behaviors["impression_time"] <= val_date]
-behaviors_test = behaviors[behaviors["impression_time"] > val_date]
-
-# Validation set
-#behaviors_train = behaviors
-
 # Pre-process behaviors for merging
-behaviors_train = behaviors_train.explode("article_ids_inview").reset_index(drop=True)
-behaviors_train["article_ids_clicked"] = behaviors_train["article_ids_clicked"].apply(
-    lambda x: list(map(int, x)) if isinstance(x, (list, np.ndarray)) else []
+behaviors = behaviors.explode("article_ids_inview").reset_index(drop=True)
+behaviors["article_ids_clicked"] = behaviors["article_ids_clicked"].apply(
+    lambda x: int(x[0]) if isinstance(x, (list, np.ndarray)) and len(x) > 0 else np.nan
 )
-behaviors_train["clicked"] = behaviors_train.apply(lambda x: int(x["article_ids_inview"]) in x["article_ids_clicked"], axis=1)
-
-
-
-"""
-we can merge later also embeddings by article_id
-
-articles_emb = pd.merge(
-    articles,
-    embeddings_df,
-    left_on="article_id",
-    right_index=True,
-    how="left"
+behaviors["clicked"] = behaviors.apply(
+    lambda x: int(x["article_ids_inview"]) == x["article_ids_clicked"] if pd.notna(x["article_ids_clicked"]) else False,
+    axis=1
 )
-
-and next merge should be (instead of existing merge_data)
-
-merged_data = pd.merge(
-    behaviors_train,
-    articles_emb,
-    left_on="article_ids_inview",
-    right_on="article_id",
-    how="left"
-)
-"""
-
 print("Merging behaviour and articles")
 # Merge data
 # 1. Merge behaviors and articles
 merged_data = pd.merge(
-    behaviors_train,
+    behaviors,
     articles,
     left_on="article_ids_inview",
     right_on="article_id",
@@ -201,27 +198,69 @@ merged_data = pd.merge(
     how="left"
 )
 
-
 merged_data["user_article_same_mood"] = merged_data["sentiment_label"] == merged_data["user_mood"]
+merged_data["user_article_favorite"] = merged_data["category"] == merged_data["favorite_category"]
+merged_data["user_article_least_favorite"] = merged_data["category"] == merged_data["least_favorite_category"]
+merged_data["time_diff_origin_and_inview"] = (
+            merged_data["published_time"] - merged_data["origin_published_time"]).dt.total_seconds()
+merged_data["time_diff_origin_and_impression"] = (
+            merged_data["impression_time"] - merged_data["origin_published_time"]).dt.total_seconds()
 
+def categorize_time_of_day(hour):
+    if hour < 6:
+        return 'Night'
+    elif hour < 12:
+        return 'Morning'
+    elif hour < 18:
+        return 'Afternoon'
+    else:
+        return 'Evening'
+
+
+merged_data['time_of_day'] = merged_data['impression_time'].dt.hour.apply(categorize_time_of_day)
 
 # Select and rename columns
-final_data = merged_data
+
+target = ["clicked"]
+ids = ["impression_id", "session_id", "user_id", "article_id"]
+feature_user = ['user_average_read_time', 'user_average_scroll_percentage',
+                'user_impression_frequency', 'user_interaction_score', 'user_mood', ]
+feature_impression = ['device_type', 'is_sso_user', 'is_subscriber', 'origin_read_time',
+                      'origin_scroll_percentage', 'coming_from_home_page',
+                      'origin_sentiment_label', 'origin_sentiment_score', 'time_diff_origin_and_inview',
+                      'time_diff_origin_and_impression', 'time_of_day']
+feature_article = ['premium', 'sentiment_score', 'sentiment_label', 'user_article_same_mood',
+                   'user_article_favorite',
+                   'user_article_least_favorite', 'cluster']
+
+
+
+
+val_date = '2023-05-23 07:00:00'
+# Filter train/test
+merged_data_train = merged_data[merged_data["impression_time"] <= val_date]
+merged_data_test = merged_data[merged_data["impression_time"] > val_date]
+
+final_columns = ids + target + feature_user + feature_article + feature_impression
+
+final_data_train = merged_data_train[final_columns]
+final_data_test = merged_data_test[final_columns]
+
+
+
+
+# Validation set
 print("saving to parquet")
 # Save to CSV
-file_name = f"xgboost_dataset_{dataset_type}"
-final_data.to_parquet(f"{file_name}.parquet", index=False)
+file_name_train = f"train_dataset_{dataset_type}"
+final_data_train.to_parquet(f"{file_name_train}.parquet", index=False)
+print(f"Saved {file_name_train} of length: {len(final_data_train)} ")
+
+file_name_test = f"test_dataset_{dataset_type}"
+final_data_test.to_parquet(f"{file_name_test}.parquet", index=False)
+print(f"Saved {file_name_test} of length: {len(final_data_test)}")
 end = time.time()
-print(f"Saved {file_name} of length: {len(final_data)} in {end-start:.2f} seconds.")
+print(f"Took: {end - start:.2f} seconds.")
 
 
-features_cont = ['read_time', 
-                 'sentiment_score', 'user_average_read_time',
-                 'user_average_scroll_percentage', 'user_impression_frequency',
-                 'interaction_score']
 
-features_cat = ['sentiment_label', 'user_mood','device_type',
-                'is_sso_user', 'is_subscriber', 'premium',
-                'category_encoded', 'subcategory_encoded',
-                'favorite_category_encoded', 'least_favorite_category_encoded',
-                'user_article_same_mood']
