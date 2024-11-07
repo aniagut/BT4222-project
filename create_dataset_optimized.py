@@ -60,8 +60,12 @@ assert homepage_category not in behaviors_articles["category"].values
 homepage_id = 0
 assert homepage_id not in behaviors_articles["origin_article_id"].values
 behaviors["origin_article_id"] = behaviors["origin_article_id"].fillna(homepage_id)
-behaviors["coming_from_home_page"] = behaviors["origin_article_id"] == homepage_id
+homepage_cluster = np.nanmax(behaviors_articles["cluster"].values)+1
+assert homepage_cluster not in behaviors_articles["cluster"].values
+
 # Features
+behaviors["coming_from_home_page"] = behaviors["origin_article_id"] == homepage_id
+behaviors["origin_cluster"] = behaviors_articles["cluster"].fillna(homepage_cluster)
 behaviors["origin_category"] = behaviors_articles["category"].fillna(homepage_category)
 behaviors["origin_scroll_percentage"] = behaviors_articles["origin_scroll_percentage"].fillna(0)
 behaviors["origin_sentiment_label"] = behaviors_articles["sentiment_label"].fillna("Neutral")
@@ -198,13 +202,22 @@ merged_data = pd.merge(
     how="left"
 )
 
+print("User same/diff features")
 merged_data["user_article_same_mood"] = merged_data["sentiment_label"] == merged_data["user_mood"]
 merged_data["user_article_favorite"] = merged_data["category"] == merged_data["favorite_category"]
 merged_data["user_article_least_favorite"] = merged_data["category"] == merged_data["least_favorite_category"]
-merged_data["time_diff_origin_and_inview"] = (
+
+print("Origin same/diff features")
+print("origin features")
+merged_data["origin_current_diff_published"] = (
             merged_data["published_time"] - merged_data["origin_published_time"]).dt.total_seconds()
-merged_data["time_diff_origin_and_impression"] = (
+merged_data["origin_current_diff_impression_published"] = (
             merged_data["impression_time"] - merged_data["origin_published_time"]).dt.total_seconds()
+
+merged_data["origin_current_same_cluster"] = merged_data["origin_cluster"] == merged_data["cluster"]
+merged_data["origin_current_same_category"] = merged_data["origin_category"] == merged_data["category"]
+merged_data["origin_current_same_sentiment_label"] = merged_data["origin_sentiment_label"] == merged_data["sentiment_label"]
+merged_data["origin_current_diff_sentiment_score"] = merged_data["origin_sentiment_score"] - merged_data["sentiment_score"]
 
 def categorize_time_of_day(hour):
     if hour < 6:
@@ -227,8 +240,11 @@ feature_user = ['user_average_read_time', 'user_average_scroll_percentage',
                 'user_impression_frequency', 'user_interaction_score', 'user_mood', ]
 feature_impression = ['device_type', 'is_sso_user', 'is_subscriber', 'origin_read_time',
                       'origin_scroll_percentage', 'coming_from_home_page',
-                      'origin_sentiment_label', 'origin_sentiment_score', 'time_diff_origin_and_inview',
-                      'time_diff_origin_and_impression', 'time_of_day']
+                      'origin_sentiment_label', 'origin_sentiment_score',
+                      'origin_current_diff_published',
+                      'origin_current_diff_impression_published', 'time_of_day', 'origin_cluster',
+                      'origin_current_same_cluster','origin_current_same_category',
+                      'origin_current_same_sentiment_label','origin_current_diff_sentiment_score']
 feature_article = ['premium', 'sentiment_score', 'sentiment_label', 'user_article_same_mood',
                    'user_article_favorite',
                    'user_article_least_favorite', 'cluster']
