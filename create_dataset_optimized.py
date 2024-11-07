@@ -175,7 +175,7 @@ history_FE = history_exploded.groupby('user_id').agg({
 # Pre-process behaviors for merging
 behaviors = behaviors.explode("article_ids_inview").reset_index(drop=True)
 behaviors["article_ids_clicked"] = behaviors["article_ids_clicked"].apply(
-    lambda x: int(x[0]) if isinstance(x, (list, np.ndarray)) and len(x) > 0 else np.nan
+     lambda x: int(x[0]) if isinstance(x, (list, np.ndarray)) and len(x) > 0 else np.nan
 )
 behaviors["clicked"] = behaviors.apply(
     lambda x: int(x["article_ids_inview"]) == x["article_ids_clicked"] if pd.notna(x["article_ids_clicked"]) else False,
@@ -253,14 +253,23 @@ feature_article = ['premium', 'sentiment_score', 'sentiment_label', 'user_articl
 
 
 val_date = '2023-05-23 07:00:00'
+test_date= '2023-05-24 07:00:00'
 # Filter train/test
-merged_data_train = merged_data[merged_data["impression_time"] <= val_date]
-merged_data_test = merged_data[merged_data["impression_time"] > val_date]
+merged_data_train = merged_data[merged_data["impression_time"] < val_date]
+merged_data_val = merged_data[(merged_data["impression_time"] > val_date) & (merged_data["impression_time"] < test_date)]
+merged_data_test = merged_data[merged_data["impression_time"] > test_date]
+
+# Displaying impression time range for each dataset
+print(f"\nTraining data time range: {merged_data_train['impression_time'].min()} to {merged_data_train['impression_time'].max()}")
+print(f"Validation data time range: {merged_data_val['impression_time'].min()} to {merged_data_val['impression_time'].max()}")
+print(f"Test data time range: {merged_data_test['impression_time'].min()} to {merged_data_test['impression_time'].max()}")
 
 final_columns = ids + target + feature_user + feature_article + feature_impression
 
 final_data_train = merged_data_train[final_columns]
+final_data_val = merged_data_val[final_columns]
 final_data_test = merged_data_test[final_columns]
+
 
 
 
@@ -272,6 +281,10 @@ file_name_train = f"train_dataset_{dataset_type}"
 final_data_train.to_parquet(f"{file_name_train}.parquet", index=False)
 print(f"Saved {file_name_train} of length: {len(final_data_train)} ")
 
+file_name_val = f"val_dataset_{dataset_type}"
+final_data_val.to_parquet(f"{file_name_val}.parquet", index=False)
+print(f"Saved {file_name_val} of length: {len(final_data_val)}")
+
 file_name_test = f"test_dataset_{dataset_type}"
 final_data_test.to_parquet(f"{file_name_test}.parquet", index=False)
 print(f"Saved {file_name_test} of length: {len(final_data_test)}")
@@ -279,4 +292,8 @@ end = time.time()
 print(f"Took: {end - start:.2f} seconds.")
 
 
+# Displaying dataset sizes
+print(f"Training data size: {len(final_data_train):,} samples")
+print(f"Validation data size: {len(final_data_val):,} samples")
+print(f"Test data size: {len(final_data_test):,} samples")
 
