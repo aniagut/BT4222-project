@@ -236,18 +236,23 @@ merged_data['time_of_day'] = merged_data['impression_time'].dt.hour.apply(catego
 
 target = ["clicked"]
 ids = ["impression_id", "session_id", "user_id", "article_id"]
+
+feature_article = ['premium', 'sentiment_score', 'sentiment_label',  'cluster']
+
 feature_user = ['user_average_read_time', 'user_average_scroll_percentage',
-                'user_impression_frequency', 'user_interaction_score', 'user_mood', ]
+                'user_impression_frequency', 'user_interaction_score', 'user_mood']
+
 feature_impression = ['device_type', 'is_sso_user', 'is_subscriber', 'origin_read_time',
                       'origin_scroll_percentage', 'coming_from_home_page',
                       'origin_sentiment_label', 'origin_sentiment_score',
                       'origin_current_diff_published',
                       'origin_current_diff_impression_published', 'time_of_day', 'origin_cluster',
                       'origin_current_same_cluster','origin_current_same_category',
-                      'origin_current_same_sentiment_label','origin_current_diff_sentiment_score']
-feature_article = ['premium', 'sentiment_score', 'sentiment_label', 'user_article_same_mood',
+                      'origin_current_same_sentiment_label','origin_current_diff_sentiment_score', 'user_article_same_mood',
                    'user_article_favorite',
-                   'user_article_least_favorite', 'cluster']
+                   'user_article_least_favorite',]
+
+
 
 
 
